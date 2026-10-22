@@ -1,9 +1,11 @@
+
 import { auth, db } from "./firebase.js";
 
 import {
   onAuthStateChanged,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
@@ -42,10 +44,14 @@ function addMonths(d, n, anchor) {
   const idx = d.getMonth() + n;
   const y = d.getFullYear() + Math.floor(idx / 12);
   const m = ((idx % 12) + 12) % 12;
+
   return new Date(
-    y, m,
+    y,
+    m,
     Math.min(anchor || d.getDate(), new Date(y, m + 1, 0).getDate()),
-    d.getHours(), d.getMinutes(), d.getSeconds()
+    d.getHours(),
+    d.getMinutes(),
+    d.getSeconds()
   );
 }
 
@@ -75,6 +81,7 @@ function esc(s) {
 
 function dateLabel(s) {
   const d = s instanceof Date ? s : parseDate(s);
+
   return d
     ? new Intl.DateTimeFormat("ar-EG", {
         day: "numeric",
@@ -129,7 +136,8 @@ function countdown(r) {
 }
 
 function message(id, t) {
-  $(id).textContent = t;
+  const el = $(id);
+  if (el) el.textContent = t;
 }
 
 function friendly(e) {
@@ -138,8 +146,50 @@ function friendly(e) {
     "auth/email-already-in-use": "البريد مستخدم بالفعل.",
     "auth/weak-password": "كلمة المرور لازم تكون 6 أحرف على الأقل.",
     "auth/invalid-email": "راجع البريد الإلكتروني.",
+    "auth/too-many-requests": "محاولات كتير. استنى شوية وجرب تاني.",
     "permission-denied": "الصلاحيات مرفوضة. راجع قواعد Firestore."
   })[e?.code] || e?.message || "حصل خطأ غير متوقع.";
+}
+
+/* استعادة كلمة المرور */
+const forgotPasswordBtn = $("forgotPasswordBtn");
+
+if (forgotPasswordBtn) {
+  forgotPasswordBtn.addEventListener("click", async () => {
+    const emailInput = $("email");
+    const email = emailInput?.value.trim();
+
+    if (!email) {
+      message("authMsg", "اكتب بريدك الإلكتروني الأول.");
+      emailInput?.focus();
+      return;
+    }
+
+    message("authMsg", "جارٍ إرسال رسالة استعادة كلمة المرور...");
+    forgotPasswordBtn.disabled = true;
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+
+      message(
+        "authMsg",
+        "لو البريد مسجل، هتوصلك رسالة لاستعادة كلمة المرور. راجع صندوق الوارد والرسائل غير المرغوب فيها."
+      );
+    } catch (e) {
+      if (e.code === "auth/invalid-email") {
+        message("authMsg", "صيغة البريد الإلكتروني غير صحيحة.");
+      } else if (e.code === "auth/too-many-requests") {
+        message("authMsg", "محاولات كتير. استنى شوية وجرب تاني.");
+      } else {
+        message(
+          "authMsg",
+          "تعذر إرسال الرسالة. تأكد من إعدادات Firebase Authentication."
+        );
+      }
+    } finally {
+      forgotPasswordBtn.disabled = false;
+    }
+  });
 }
 
 async function load() {
@@ -155,7 +205,9 @@ async function load() {
 }
 
 function render() {
-  const eligible = records.filter(r => !r.manualStatus && dueDate(r));
+  const eligible = records.filter(
+    r => !r.manualStatus && dueDate(r)
+  );
 
   const groups = new Map();
 
@@ -196,6 +248,7 @@ function render() {
           const d = dueDate(r);
           return d && +d <= Date.now();
         }
+
         return r.kind === filter;
       });
 
@@ -549,4 +602,3 @@ onAuthStateChanged(auth, async user => {
     if (tickTimer) clearInterval(tickTimer);
   }
 });
-
