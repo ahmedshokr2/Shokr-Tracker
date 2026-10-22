@@ -1,7 +1,113 @@
-<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#07110f"><title>Shokr Tracker</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="./styles.css"></head><body>
-<section id="authView" class="auth-shell"><div class="brand-mark">S<span>·</span>T</div><div class="eyebrow">AHMED SHOKR / PERSONAL WORKSPACE</div><h1>متتبع شكر</h1><p class="muted">كل مواعيدك وأرقامك في مكان واحد، بأمان ومزامنة مباشرة.</p><form id="authForm"><label for="email">البريد الإلكتروني</label><input id="email" type="email" autocomplete="username" required placeholder="name@example.com"><label for="password">كلمة المرور</label><input id="password" type="password" autocomplete="current-password" required minlength="6" placeholder="كلمة المرور"><button class="btn primary full" id="loginBtn">تسجيل الدخول</button><button class="btn secondary full" id="signupBtn" type="button">إنشاء حساب جديد</button><p id="authMsg" class="message" aria-live="polite"></p></form><small class="muted">لا تشارك كلمة المرور مع أي شخص.</small></section>
-<main id="appView" class="hidden"><header class="topbar"><div class="brand-lockup"><div class="brand-mark smallmark">S<span>·</span>T</div><div><div class="eyebrow">AHMED SHOKR</div><h1>متتبع شكر</h1></div></div><div class="top-actions"><span id="userBadge" class="user-badge">متصل</span><button id="logoutBtn" class="btn secondary">خروج</button></div></header>
-<section class="hero"><div><div class="eyebrow green-text">لوحة المتابعة</div><h2>خليك سابق مواعيدك.</h2><p class="muted">الخصم كل 34 يومًا · الميني باك في نفس يوم الشهر التالي.</p></div><div class="hero-icon">↗</div></section>
-<section class="stats"><article class="stat"><span>إجمالي السجلات</span><strong id="totalCount">0</strong><small>سجلات محفوظة</small></article><article class="stat"><span>مواعيد اليوم</span><strong id="todayCount" class="green-text">0</strong><small>تستحق المتابعة</small></article><article class="stat"><span>متأخرة</span><strong id="lateCount" class="red-text">0</strong><small>تحتاج مراجعة</small></article><article class="stat"><span>خلال 3 أيام</span><strong id="soonCount">0</strong><small>قريبًا</small></article></section>
-<section class="panel"><div class="section-heading"><div><div class="eyebrow">إدارة السجلات</div><h2 id="formTitle">إضافة سجل جديد</h2></div><span class="live-dot">متصل بقاعدة البيانات</span></div><form id="numberForm"><input type="hidden" id="editId"><div class="form-grid"><div><label for="personName">اسم صاحب الرقم <span class="muted">(اختياري)</span></label><input id="personName" maxlength="80" placeholder="الاسم"></div><div><label for="phone">رقم الموبايل</label><input id="phone" required inputmode="tel" maxlength="20" placeholder="01xxxxxxxxx"></div><div><label for="kind">نوع المتابعة</label><select id="kind"><option value="discount">الخصم · 34 يومًا</option><option value="mini">الميني باك · شهري</option></select></div><div><label for="lastDate">تاريخ ووقت آخر عملية</label><input id="lastDate" type="datetime-local" required></div><div><label for="manualStatus">الحالة (اختياري)</label><select id="manualStatus"><option value="">حساب الموعد تلقائيًا</option><option value="متاح">متاح</option><option value="مش عارف">مش عارف</option></select></div></div><div class="form-actions"><button class="btn primary" type="submit">حفظ السجل</button><button class="btn secondary hidden" id="cancelEdit" type="button">إلغاء</button></div><p id="formMsg" class="message" aria-live="polite"></p></form></section>
-<section class="panel"><div class="section-heading"><div><div class="eyebrow">المتابعة اليومية</div><h2>سجل الأرقام</h2></div><span id="shownCount" class="count-badge">0 سجل</span></div><div class="list-tools"><input id="search" class="search" placeholder="ابحث بالاسم أو رقم الموبايل"><div class="tool-actions"><button id="exportBtn" class="btn secondary">نسخة CSV احتياطية</button><button id="auditBtn" class="btn secondary">فحص التكرارات</button><button id="importBtn" class="btn primary">استيراد الأرقام الـ34</button></div></div><p id="importMsg" class="message" aria-live="polite"></p><div id="auditBox" class="audit-box hidden"></div><div class="filters"><button class="filter active" data-filter="all">الكل</button><button class="filter" data-filter="discount">الخصم</button><button class="filter" data-filter="mini">الميني باك</button><button class="filter" data-filter="due">مستحق أو متأخر</button></div><div class="records" id="records"></div><div id="empty" class="empty hidden">مفيش سجلات مطابقة. جرّب تغيّر البحث أو أضف سجل جديد.</div></section><footer>SHOKR TRACKER <span>•</span> بياناتك خاصة بحسابك</footer></main><script type="module" src="./app.js"></script></body></html>
+
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#07110f">
+  <title>Shokr Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<section id="authView" class="auth-shell">
+  <div class="brand-mark">S<span>·</span>T</div>
+  <div class="eyebrow">AHMED SHOKR / PERSONAL WORKSPACE</div>
+  <h1>متتبع شكر</h1>
+  <p class="muted">كل مواعيدك وأرقامك في مكان واحد، بأمان ومزامنة مباشرة.</p>
+  <form id="authForm">
+    <label for="email">البريد الإلكتروني</label>
+    <input id="email" type="email" autocomplete="username" required placeholder="name@example.com">
+    <label for="password">كلمة المرور</label>
+    <input id="password" type="password" autocomplete="current-password" required minlength="6" placeholder="كلمة المرور">
+    <button class="btn primary full" id="loginBtn" type="submit">تسجيل الدخول</button>
+    <button class="btn secondary full" id="forgotPasswordBtn" type="button">نسيت كلمة المرور؟</button>
+    <button class="btn secondary full" id="signupBtn" type="button">إنشاء حساب جديد</button>
+    <p id="authMsg" class="message" aria-live="polite"></p>
+  </form>
+  <small class="muted">لا تشارك كلمة المرور مع أي شخص.</small>
+</section>
+
+<main id="appView" class="hidden">
+  <header class="topbar">
+    <div class="brand-lockup">
+      <div class="brand-mark smallmark">S<span>·</span>T</div>
+      <div><div class="eyebrow">AHMED SHOKR</div><h1>متتبع شكر</h1></div>
+    </div>
+    <div class="top-actions">
+      <span id="userBadge" class="user-badge">متصل</span>
+      <button id="logoutBtn" class="btn secondary" type="button">خروج</button>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div>
+      <div class="eyebrow green-text">لوحة المتابعة</div>
+      <h2>خليك سابق مواعيدك.</h2>
+      <p class="muted">الخصم كل 34 يومًا · الميني باك في نفس يوم الشهر التالي.</p>
+    </div>
+    <div class="hero-icon">↗</div>
+  </section>
+
+  <section class="stats">
+    <article class="stat"><span>إجمالي الأرقام</span><strong id="totalCount">0</strong><small>أرقام محفوظة</small></article>
+    <article class="stat"><span>مواعيد اليوم</span><strong id="todayCount" class="green-text">0</strong><small>متابعات تستحق اليوم</small></article>
+    <article class="stat"><span>متأخرة</span><strong id="lateCount" class="red-text">0</strong><small>تحتاج مراجعة</small></article>
+    <article class="stat soon-stat" id="soonStat" role="button" tabindex="0" aria-label="عرض الأرقام المستحقة خلال 3 أيام">
+      <span>خلال 3 أيام</span><strong id="soonCount">0</strong><small>اضغط لعرض الأرقام</small>
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading">
+      <div><div class="eyebrow">إدارة السجلات</div><h2 id="formTitle">إضافة سجل جديد</h2></div>
+      <span class="live-dot">متصل بقاعدة البيانات</span>
+    </div>
+    <form id="numberForm">
+      <input type="hidden" id="editId">
+      <div class="form-grid">
+        <div><label for="personName">اسم صاحب الرقم <span class="muted">(اختياري)</span></label><input id="personName" maxlength="80" placeholder="الاسم"></div>
+        <div><label for="phone">رقم الموبايل</label><input id="phone" required inputmode="tel" maxlength="20" placeholder="01xxxxxxxxx"></div>
+        <div><label for="kind">نوع المتابعة</label><select id="kind"><option value="discount">الخصم · 34 يومًا</option><option value="mini">الميني باك · شهري</option></select></div>
+        <div><label for="lastDate">تاريخ ووقت آخر عملية</label><input id="lastDate" type="datetime-local" required></div>
+        <div><label for="manualStatus">الحالة (اختياري)</label><select id="manualStatus"><option value="">حساب الموعد تلقائيًا</option><option value="متاح">متاح</option><option value="مش عارف">مش عارف</option></select></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">حفظ السجل</button>
+        <button class="btn secondary hidden" id="cancelEdit" type="button">إلغاء</button>
+      </div>
+      <p id="formMsg" class="message" aria-live="polite"></p>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading">
+      <div><div class="eyebrow">المتابعة اليومية</div><h2>سجل الأرقام</h2></div>
+      <span id="shownCount" class="count-badge">0 رقم</span>
+    </div>
+    <div class="list-tools">
+      <input id="search" class="search" placeholder="ابحث بالاسم أو رقم الموبايل">
+      <div class="tool-actions">
+        <button id="exportBtn" class="btn secondary" type="button">نسخة CSV احتياطية</button>
+        <button id="auditBtn" class="btn secondary" type="button">فحص التكرارات</button>
+        <button id="importBtn" class="btn primary" type="button">استيراد الأرقام الـ34</button>
+      </div>
+    </div>
+    <p id="importMsg" class="message" aria-live="polite"></p>
+    <div id="auditBox" class="audit-box hidden"></div>
+    <div class="filters">
+      <button class="filter active" data-filter="all" type="button">الكل</button>
+      <button class="filter" data-filter="discount" type="button">الخصم</button>
+      <button class="filter" data-filter="mini" type="button">الميني باك</button>
+      <button class="filter" data-filter="due" type="button">مستحق أو متأخر</button>
+      <button class="filter" data-filter="soon" type="button">خلال 3 أيام</button>
+    </div>
+    <div class="records" id="records"></div>
+    <div id="empty" class="empty hidden">مفيش سجلات مطابقة. جرّب تغيّر البحث أو أضف سجل جديد.</div>
+  </section>
+  <footer>SHOKR TRACKER <span>•</span> بياناتك خاصة بحسابك</footer>
+</main>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
