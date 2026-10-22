@@ -27,8 +27,10 @@ let currentUser = null;
 let records = [];
 let filter = "all";
 let tickTimer = null;
+let loading = false;
 
 const pad = n => String(n).padStart(2, "0");
+const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
 
 function localInputValue(d = new Date()) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -129,15 +131,13 @@ function countdown(r) {
         ${part(pad(mins), "دقيقة")}
         ${part(pad(secs), "ثانية")}
       </span>`,
-    cls: overdue
-      ? "late"
-      : (+d - Date.now() <= 259200000 ? "due" : "")
+    cls: overdue ? "late" : (+d - Date.now() <= THREE_DAYS ? "due" : "")
   };
 }
 
-function message(id, t) {
+function message(id, text) {
   const el = $(id);
-  if (el) el.textContent = t;
+  if (el) el.textContent = text;
 }
 
 function friendly(e) {
@@ -147,52 +147,14 @@ function friendly(e) {
     "auth/weak-password": "كلمة المرور لازم تكون 6 أحرف على الأقل.",
     "auth/invalid-email": "راجع البريد الإلكتروني.",
     "auth/too-many-requests": "محاولات كتير. استنى شوية وجرب تاني.",
+    "auth/network-request-failed": "في مشكلة اتصال بالإنترنت. جرّب تاني.",
     "permission-denied": "الصلاحيات مرفوضة. راجع قواعد Firestore."
   })[e?.code] || e?.message || "حصل خطأ غير متوقع.";
 }
 
-/* استعادة كلمة المرور */
-const forgotPasswordBtn = $("forgotPasswordBtn");
-
-if (forgotPasswordBtn) {
-  forgotPasswordBtn.addEventListener("click", async () => {
-    const emailInput = $("email");
-    const email = emailInput?.value.trim();
-
-    if (!email) {
-      message("authMsg", "اكتب بريدك الإلكتروني الأول.");
-      emailInput?.focus();
-      return;
-    }
-
-    message("authMsg", "جارٍ إرسال رسالة استعادة كلمة المرور...");
-    forgotPasswordBtn.disabled = true;
-
-    try {
-      await sendPasswordResetEmail(auth, email);
-
-      message(
-        "authMsg",
-        "لو البريد مسجل، هتوصلك رسالة لاستعادة كلمة المرور. راجع صندوق الوارد والرسائل غير المرغوب فيها."
-      );
-    } catch (e) {
-      if (e.code === "auth/invalid-email") {
-        message("authMsg", "صيغة البريد الإلكتروني غير صحيحة.");
-      } else if (e.code === "auth/too-many-requests") {
-        message("authMsg", "محاولات كتير. استنى شوية وجرب تاني.");
-      } else {
-        message(
-          "authMsg",
-          "تعذر إرسال الرسالة. تأكد من إعدادات Firebase Authentication."
-        );
-      }
-    } finally {
-      forgotPasswordBtn.disabled = false;
-    }
-  });
-}
-
 async function load() {
+  if (!currentUser) return;
+
   const snap = await getDocs(
     query(
       collection(db, "users", currentUser.uid, "numbers"),
@@ -205,33 +167,34 @@ async function load() {
 }
 
 function render() {
-  const eligible = records.filter(
-    r => !r.manualStatus && dueDate(r)
-  );
-
+  const now = Date.now();
+  const eligible = records.filter(r => !r.manualStatus && dueDate(r));
   const groups = new Map();
 
   for (const r of records) {
     const phone = String(r.phone || "").replace(/\s/g, "");
-
     if (!groups.has(phone)) groups.set(phone, []);
     groups.get(phone).push(r);
   }
 
   $("totalCount").textContent = groups.size;
 
-  $("todayCount").textContent = eligible.filter(
-    r => dueDate(r)?.toDateString() === new Date().toDateString()
+  $("todayCount").textContent = eligible.filter(r =>
+    dueDate(r)?.toDateString() === new Date().toDateString()
   ).length;
 
-  $("lateCount").textContent = eligible.filter(
-    r => +dueDate(r) < Date.now()
+  $("lateCount").textContent = eligible.filter(r =>
+    +dueDate(r) < now
   ).length;
 
-  $("soonCount").textContent = eligible.filter(r => {
-    const n = +dueDate(r) - Date.now();
-    return n >= 0 && n <= 259200000;
-  }).length;
+  const soonPhones = new Set(
+    eligible.filter(r => {
+      const delta = +dueDate(r) - now;
+      return delta >= 0 && delta <= THREE_DAYS;
+    }).map(r => String(r.phone || "").replace(/\s/g, ""))
+  );
+
+  $("soonCount").textContent = soonPhones.size;
 
   const searchText = $("search").value.trim().toLowerCase();
 
@@ -241,16 +204,21 @@ function render() {
     const matchesSearch =
       `${first.name || ""} ${phone}`.toLowerCase().includes(searchText);
 
-    const matchesFilter =
-      filter === "all" ||
-      items.some(r => {
-        if (filter === "due") {
-          const d = dueDate(r);
-          return d && +d <= Date.now();
-        }
+    const matchesFilter = filter === "all" || items.some(r => {
+      const d = dueDate(r);
 
-        return r.kind === filter;
-      });
+      if (filter === "due") {
+        return d && +d <= now;
+      }
+
+      if (filter === "soon") {
+        if (!d) return false;
+        const delta = +d - now;
+        return delta >= 0 && delta <= THREE_DAYS;
+      }
+
+      return r.kind === filter;
+    });
 
     return matchesSearch && matchesFilter;
   });
@@ -277,21 +245,13 @@ function render() {
           <span>الموعد القادم</span>
           <strong>${r.manualStatus ? esc(r.manualStatus) : dateLabel(dueDate(r))}</strong>
         </div>
-
         <div class="countdown ${c.cls}" data-countdown="${esc(r.id)}">
           ${c.text}
         </div>
-
         <div class="followup-actions">
-          <button class="btn secondary" data-action="done" data-id="${esc(r.id)}">
-            تمت العملية
-          </button>
-          <button class="btn secondary" data-action="edit" data-id="${esc(r.id)}">
-            تعديل
-          </button>
-          <button class="btn danger" data-action="delete" data-id="${esc(r.id)}">
-            حذف
-          </button>
+          <button class="btn secondary" data-action="done" data-id="${esc(r.id)}" type="button">تمت العملية</button>
+          <button class="btn secondary" data-action="edit" data-id="${esc(r.id)}" type="button">تعديل</button>
+          <button class="btn danger" data-action="delete" data-id="${esc(r.id)}" type="button">حذف</button>
         </div>
       </div>`;
   }
@@ -304,18 +264,16 @@ function render() {
     return `
       <article class="record grouped-record">
         <div class="record-head">
-          <div>
+          <div class="record-identity">
             <div class="record-name">${esc(first.name || "بدون اسم")}</div>
             <div class="phone" dir="ltr">${esc(phone)}</div>
           </div>
         </div>
-
         <div class="followups">
           <section class="followup-section mini-section">
             <h3>الميني باك</h3>
             ${followupCard(mini, "mini")}
           </section>
-
           <section class="followup-section discount-section">
             <h3>الخصم</h3>
             ${followupCard(discount, "discount")}
@@ -331,11 +289,14 @@ function resetForm() {
   $("lastDate").value = localInputValue();
   $("formTitle").textContent = "إضافة سجل جديد";
   $("cancelEdit").classList.add("hidden");
+  message("formMsg", "");
 }
 
 $("numberForm").addEventListener("submit", async e => {
   e.preventDefault();
+  if (!currentUser || loading) return;
 
+  const submitBtn = $("numberForm").querySelector('button[type="submit"]');
   const id = $("editId").value;
   const phone = $("phone").value.trim().replace(/\s+/g, "");
   const name = $("personName").value.trim();
@@ -345,6 +306,13 @@ $("numberForm").addEventListener("submit", async e => {
 
   if (!phone || !lastDate) return;
 
+  const parsed = parseDate(lastDate);
+
+  if (!parsed) {
+    message("formMsg", "راجع تاريخ ووقت آخر عملية.");
+    return;
+  }
+
   const data = {
     phone,
     name,
@@ -352,9 +320,12 @@ $("numberForm").addEventListener("submit", async e => {
     lastDate,
     cycleStart: lastDate,
     manualStatus: manualStatus || "",
-    anchorDay: new Date(lastDate).getDate(),
+    anchorDay: parsed.getDate(),
     updatedAt: serverTimestamp()
   };
+
+  loading = true;
+  if (submitBtn) submitBtn.disabled = true;
 
   try {
     if (id) {
@@ -384,14 +355,17 @@ $("numberForm").addEventListener("submit", async e => {
     await load();
   } catch (e) {
     message("formMsg", friendly(e));
+  } finally {
+    loading = false;
+    if (submitBtn) submitBtn.disabled = false;
   }
 });
 
-$("cancelEdit").onclick = resetForm;
+$("cancelEdit").addEventListener("click", resetForm);
 
 $("records").addEventListener("click", async e => {
   const b = e.target.closest("button[data-action]");
-  if (!b) return;
+  if (!b || !currentUser) return;
 
   const r = records.find(x => x.id === b.dataset.id);
   if (!r) return;
@@ -406,6 +380,7 @@ $("records").addEventListener("click", async e => {
     $("formTitle").textContent = "تعديل السجل";
     $("cancelEdit").classList.remove("hidden");
     window.scrollTo({ top: 0, behavior: "smooth" });
+    return;
   }
 
   if (b.dataset.action === "done") {
@@ -450,7 +425,7 @@ $("records").addEventListener("click", async e => {
 $("search").addEventListener("input", render);
 
 document.querySelectorAll(".filter").forEach(b => {
-  b.onclick = () => {
+  b.addEventListener("click", () => {
     filter = b.dataset.filter;
 
     document.querySelectorAll(".filter").forEach(x => {
@@ -458,14 +433,37 @@ document.querySelectorAll(".filter").forEach(b => {
     });
 
     render();
-  };
+  });
 });
 
-$("exportBtn").onclick = () => {
+function showSoonRecords() {
+  filter = "soon";
+
+  document.querySelectorAll(".filter").forEach(button => {
+    button.classList.toggle("active", button.dataset.filter === "soon");
+  });
+
+  render();
+
+  $("records").scrollIntoView({
+    behavior: "smooth",
+    block: "start"
+  });
+}
+
+$("soonStat").addEventListener("click", showSoonRecords);
+
+$("soonStat").addEventListener("keydown", event => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    showSoonRecords();
+  }
+});
+
+$("exportBtn").addEventListener("click", () => {
   const cols = [
     "id", "name", "phone", "kind", "lastDate",
-    "cycleStart", "manualStatus", "anchorDay",
-    "createdAt", "updatedAt"
+    "cycleStart", "manualStatus", "anchorDay", "createdAt", "updatedAt"
   ];
 
   const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -493,14 +491,13 @@ $("exportBtn").onclick = () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 
   message("importMsg", `تم تجهيز نسخة احتياطية تضم ${records.length} سجلًا.`);
-};
+});
 
-$("auditBtn").onclick = () => {
+$("auditBtn").addEventListener("click", () => {
   const groups = new Map();
 
   for (const r of records) {
     const key = `${String(r.phone || "").replace(/\s/g, "")}|${r.kind || "unknown"}`;
-
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(r);
   }
@@ -518,15 +515,14 @@ $("auditBtn").onclick = () => {
        ).join("")}</ul>`
     : `<strong>لم يظهر أي تكرار حسب رقم الهاتف ونوع المتابعة.</strong>
        <p>لم يتم تعديل أي بيانات.</p>`;
-};
+});
 
-$("importBtn").onclick = () => {
-  alert(
-    "قائمة الأرقام الأصلية غير موجودة في هذا الملف. لم تتم إضافة أو حذف أي سجل."
-  );
-};
+$("importBtn").addEventListener("click", () => {
+  alert("قائمة الأرقام الأصلية غير موجودة في هذا الملف. لم تتم إضافة أو حذف أي سجل.");
+});
 
-$("loginBtn").onclick = async () => {
+$("loginBtn").addEventListener("click", async e => {
+  e.preventDefault();
   message("authMsg", "جارٍ تسجيل الدخول...");
 
   try {
@@ -540,9 +536,9 @@ $("loginBtn").onclick = async () => {
   } catch (e) {
     message("authMsg", friendly(e));
   }
-};
+});
 
-$("signupBtn").onclick = async () => {
+$("signupBtn").addEventListener("click", async () => {
   message("authMsg", "جارٍ إنشاء الحساب...");
 
   try {
@@ -556,20 +552,71 @@ $("signupBtn").onclick = async () => {
   } catch (e) {
     message("authMsg", friendly(e));
   }
-};
+});
+
+$("forgotPasswordBtn").addEventListener("click", async () => {
+  const emailInput = $("email");
+  const email = emailInput.value.trim();
+
+  if (!email) {
+    message("authMsg", "اكتب بريدك الإلكتروني الأول.");
+    emailInput.focus();
+    return;
+  }
+
+  if (!emailInput.checkValidity()) {
+    message("authMsg", "صيغة البريد الإلكتروني غير صحيحة.");
+    emailInput.focus();
+    return;
+  }
+
+  const button = $("forgotPasswordBtn");
+  button.disabled = true;
+  message("authMsg", "جارٍ إرسال رسالة استعادة كلمة المرور...");
+
+  try {
+    await sendPasswordResetEmail(auth, email);
+
+    message(
+      "authMsg",
+      "لو البريد مسجل، هتوصلك رسالة استعادة كلمة المرور. راجع الوارد والرسائل غير المرغوب فيها."
+    );
+  } catch (e) {
+    if (e.code === "auth/invalid-email") {
+      message("authMsg", "صيغة البريد الإلكتروني غير صحيحة.");
+    } else if (e.code === "auth/too-many-requests") {
+      message("authMsg", "محاولات كتير. استنى شوية وجرب تاني.");
+    } else {
+      message("authMsg", "تعذر إرسال الرسالة. تأكد من إعدادات Firebase Authentication.");
+    }
+  } finally {
+    button.disabled = false;
+  }
+});
 
 $("authForm").addEventListener("submit", e => {
   e.preventDefault();
   $("loginBtn").click();
 });
 
-$("logoutBtn").onclick = () => signOut(auth);
+$("logoutBtn").addEventListener("click", async () => {
+  try {
+    await signOut(auth);
+  } catch (e) {
+    message("formMsg", friendly(e));
+  }
+});
 
 onAuthStateChanged(auth, async user => {
   currentUser = user;
 
   $("authView").classList.toggle("hidden", !!user);
   $("appView").classList.toggle("hidden", !user);
+
+  if (tickTimer) {
+    clearInterval(tickTimer);
+    tickTimer = null;
+  }
 
   if (user) {
     $("userBadge").textContent = user.email || "متصل";
@@ -578,27 +625,15 @@ onAuthStateChanged(auth, async user => {
     try {
       await load();
 
-      if (tickTimer) clearInterval(tickTimer);
-
       tickTimer = setInterval(() => {
-        for (const r of records) {
-          const el = document.querySelector(
-            `[data-countdown="${CSS.escape(r.id)}"]`
-          );
-
-          if (!el) continue;
-
-          const c = countdown(r);
-          el.innerHTML = c.text;
-          el.className = `countdown ${c.cls}`;
-        }
+        // تحديث العدادات والأرقام القريبة من موعد الاستحقاق.
+        render();
       }, 1000);
     } catch (e) {
       message("formMsg", friendly(e));
     }
   } else {
     records = [];
-
-    if (tickTimer) clearInterval(tickTimer);
+    $("records").innerHTML = "";
   }
 });
