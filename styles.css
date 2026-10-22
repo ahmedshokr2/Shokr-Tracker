@@ -118,3 +118,127 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+/* تكبير رقم الموبايل */
+.grouped-record .record-head {
+  display: block;
+  text-align: center;
+}
+
+.grouped-record .record-name {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.grouped-record .phone {
+  text-align: center;
+  font-size: clamp(28px, 8vw, 38px);
+  font-weight: 900;
+  line-height: 1.5;
+  color: #ffffff;
+  margin: 0 0 12px;
+  letter-spacing: 1px;
+}
+
+/* الميني باك والخصم جنب بعض */
+.grouped-record .followups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.grouped-record .followup-section {
+  min-width: 0;
+  padding: 8px;
+  border-radius: 12px;
+}
+
+.grouped-record .followup-section h3 {
+  font-size: 13px;
+  text-align: center;
+  margin: 0 0 8px;
+}
+
+.grouped-record .followup-row {
+  gap: 8px;
+}
+
+.grouped-record .followup-date {
+  font-size: 10px;
+  gap: 4px;
+}
+
+.grouped-record .followup-date strong {
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.grouped-record .countdown {
+  padding: 5px 3px;
+  gap: 3px;
+}
+
+.grouped-record .countdown-parts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.grouped-record .time-part {
+  min-width: 0;
+  padding: 5px 2px;
+  border-radius: 7px;
+}
+
+.grouped-record .time-part b {
+  font-size: 16px;
+}
+
+.grouped-record .time-part small {
+  font-size: 9px;
+}
+
+.grouped-record .followup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.grouped-record .followup-actions .btn {
+  width: 100%;
+  padding: 7px 2px;
+  font-size: 10px;
+}
+
+.grouped-record .followup-row.missing {
+  padding: 7px 4px;
+}
+
+.grouped-record .followup-row.missing strong,
+.grouped-record .followup-row.missing p {
+  font-size: 10px;
+}
+
+/* مساحة أكبر على الشاشات الكبيرة */
+@media (min-width: 650px) {
+  .grouped-record .phone {
+    font-size: 38px;
+  }
+
+  .grouped-record .followup-section {
+    padding: 12px;
+  }
+
+  .grouped-record .followup-section h3 {
+    font-size: 15px;
+  }
+
+  .grouped-record .followup-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .grouped-record .followup-actions .btn {
+    flex: 1 1 65px;
+    font-size: 11px;
+  }
+}
