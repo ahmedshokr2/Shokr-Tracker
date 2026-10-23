@@ -38,10 +38,13 @@ function localInputValue(d = new Date()) {
 
 function parseDate(s) {
   if (!s) return null;
+
   const d = new Date(s.length === 10 ? `${s}T12:00` : s);
+
   return Number.isNaN(+d) ? null : d;
 }
 
+// إضافة شهر مع الحفاظ على الساعة والدقيقة واليوم الأصلي قدر الإمكان.
 function addMonths(d, n, anchor) {
   const idx = d.getMonth() + n;
   const y = d.getFullYear() + Math.floor(idx / 12);
@@ -53,14 +56,17 @@ function addMonths(d, n, anchor) {
     Math.min(anchor || d.getDate(), new Date(y, m + 1, 0).getDate()),
     d.getHours(),
     d.getMinutes(),
-    d.getSeconds()
+    d.getSeconds(),
+    d.getMilliseconds()
   );
 }
 
 function dueDate(r) {
   if (r.manualStatus) return null;
 
-  const d = parseDate(r.cycleStart || r.lastDate);
+  // التعديل: نعتمد على آخر عملية مسجلة أولًا.
+  const d = parseDate(r.lastDate || r.cycleStart);
+
   if (!d) return null;
 
   if (r.kind === "discount") {
@@ -68,6 +74,7 @@ function dueDate(r) {
     return d;
   }
 
+  // الميني باك: نفس يوم الشهر التالي ونفس الساعة والدقيقة.
   return addMonths(d, 1, r.anchorDay || d.getDate());
 }
 
@@ -90,7 +97,8 @@ function dateLabel(s) {
         month: "short",
         year: "numeric",
         hour: "2-digit",
-        minute: "2-digit"
+        minute: "2-digit",
+        hour12: true
       }).format(d)
     : "—";
 }
@@ -375,7 +383,7 @@ $("records").addEventListener("click", async e => {
     $("personName").value = r.name || "";
     $("phone").value = r.phone || "";
     $("kind").value = r.kind || "discount";
-    $("lastDate").value = (r.lastDate || "").slice(0, 16);
+    $("lastDate").value = (r.lastDate || r.cycleStart || "").slice(0, 16);
     $("manualStatus").value = r.manualStatus || "";
     $("formTitle").textContent = "تعديل السجل";
     $("cancelEdit").classList.remove("hidden");
@@ -451,14 +459,17 @@ function showSoonRecords() {
   });
 }
 
-$("soonStat").addEventListener("click", showSoonRecords);
+// دعم اختياري لو العنصر موجود في HTML.
+if ($("soonStat")) {
+  $("soonStat").addEventListener("click", showSoonRecords);
 
-$("soonStat").addEventListener("keydown", event => {
-  if (event.key === "Enter" || event.key === " ") {
-    event.preventDefault();
-    showSoonRecords();
-  }
-});
+  $("soonStat").addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      showSoonRecords();
+    }
+  });
+}
 
 $("exportBtn").addEventListener("click", () => {
   const cols = [
@@ -554,45 +565,48 @@ $("signupBtn").addEventListener("click", async () => {
   }
 });
 
-$("forgotPasswordBtn").addEventListener("click", async () => {
-  const emailInput = $("email");
-  const email = emailInput.value.trim();
+// دعم اختياري لو زر استعادة كلمة المرور موجود في HTML.
+if ($("forgotPasswordBtn")) {
+  $("forgotPasswordBtn").addEventListener("click", async () => {
+    const emailInput = $("email");
+    const email = emailInput.value.trim();
 
-  if (!email) {
-    message("authMsg", "اكتب بريدك الإلكتروني الأول.");
-    emailInput.focus();
-    return;
-  }
-
-  if (!emailInput.checkValidity()) {
-    message("authMsg", "صيغة البريد الإلكتروني غير صحيحة.");
-    emailInput.focus();
-    return;
-  }
-
-  const button = $("forgotPasswordBtn");
-  button.disabled = true;
-  message("authMsg", "جارٍ إرسال رسالة استعادة كلمة المرور...");
-
-  try {
-    await sendPasswordResetEmail(auth, email);
-
-    message(
-      "authMsg",
-      "لو البريد مسجل، هتوصلك رسالة استعادة كلمة المرور. راجع الوارد والرسائل غير المرغوب فيها."
-    );
-  } catch (e) {
-    if (e.code === "auth/invalid-email") {
-      message("authMsg", "صيغة البريد الإلكتروني غير صحيحة.");
-    } else if (e.code === "auth/too-many-requests") {
-      message("authMsg", "محاولات كتير. استنى شوية وجرب تاني.");
-    } else {
-      message("authMsg", "تعذر إرسال الرسالة. تأكد من إعدادات Firebase Authentication.");
+    if (!email) {
+      message("authMsg", "اكتب بريدك الإلكتروني الأول.");
+      emailInput.focus();
+      return;
     }
-  } finally {
-    button.disabled = false;
-  }
-});
+
+    if (!emailInput.checkValidity()) {
+      message("authMsg", "صيغة البريد الإلكتروني غير صحيحة.");
+      emailInput.focus();
+      return;
+    }
+
+    const button = $("forgotPasswordBtn");
+    button.disabled = true;
+    message("authMsg", "جارٍ إرسال رسالة استعادة كلمة المرور...");
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+
+      message(
+        "authMsg",
+        "لو البريد مسجل، هتوصلك رسالة استعادة كلمة المرور. راجع الوارد والرسائل غير المرغوب فيها."
+      );
+    } catch (e) {
+      if (e.code === "auth/invalid-email") {
+        message("authMsg", "صيغة البريد الإلكتروني غير صحيحة.");
+      } else if (e.code === "auth/too-many-requests") {
+        message("authMsg", "محاولات كتير. استنى شوية وجرب تاني.");
+      } else {
+        message("authMsg", "تعذر إرسال الرسالة. تأكد من إعدادات Firebase Authentication.");
+      }
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
 
 $("authForm").addEventListener("submit", e => {
   e.preventDefault();
@@ -626,7 +640,6 @@ onAuthStateChanged(auth, async user => {
       await load();
 
       tickTimer = setInterval(() => {
-        // تحديث العدادات والأرقام القريبة من موعد الاستحقاق.
         render();
       }, 1000);
     } catch (e) {
