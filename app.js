@@ -1,3 +1,4 @@
+
 import { auth, db } from "./firebase.js";
 
 import {
@@ -27,6 +28,7 @@ let records = [];
 let filter = "all";
 let tickTimer = null;
 let loading = false;
+let authLoading = false;
 
 const pad = n => String(n).padStart(2, "0");
 const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
@@ -35,12 +37,10 @@ function localInputValue(d = new Date()) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// قراءة التاريخ المحلي بدقة، خصوصًا datetime-local.
 function parseDate(s) {
   if (!s) return null;
 
   const value = String(s).trim();
-
   const match = value.match(
     /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?$/
   );
@@ -73,21 +73,18 @@ function parseDate(s) {
   return d;
 }
 
-// إضافة شهر مع تثبيت يوم الشهر الأصلي قدر الإمكان.
+// يحافظ على يوم الشهر الأصلي قدر الإمكان.
 function addMonths(d, n, anchor) {
   const idx = d.getMonth() + n;
-  const y = d.getFullYear() + Math.floor(idx / 12);
-  const m = ((idx % 12) + 12) % 12;
-  const lastDay = new Date(y, m + 1, 0).getDate();
-  const targetDay = Math.min(
-    Number(anchor) || d.getDate(),
-    lastDay
-  );
+  const year = d.getFullYear() + Math.floor(idx / 12);
+  const month = ((idx % 12) + 12) % 12;
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const day = Math.min(Number(anchor) || d.getDate(), lastDay);
 
   return new Date(
-    y,
-    m,
-    targetDay,
+    year,
+    month,
+    day,
     d.getHours(),
     d.getMinutes(),
     d.getSeconds(),
@@ -97,19 +94,13 @@ function addMonths(d, n, anchor) {
 
 function getAnchorDay(r, d) {
   const saved = Number(r.anchorDay);
-
-  if (saved >= 1 && saved <= 31) {
-    return saved;
-  }
-
-  return d.getDate();
+  return saved >= 1 && saved <= 31 ? saved : d.getDate();
 }
 
 function dueDate(r) {
   if (r.manualStatus) return null;
 
   const d = parseDate(r.lastDate || r.cycleStart);
-
   if (!d) return null;
 
   if (r.kind === "discount") {
@@ -117,8 +108,6 @@ function dueDate(r) {
     return d;
   }
 
-  // الميني باك يرجع لنفس يوم الشهر الأصلي،
-  // حتى لو الشهر السابق كان أقصر.
   return addMonths(d, 1, getAnchorDay(r, d));
 }
 
@@ -153,10 +142,7 @@ function countdown(r) {
   }
 
   const d = dueDate(r);
-
-  if (!d) {
-    return { text: "موعد غير محدد", cls: "manual" };
-  }
+  if (!d) return { text: "موعد غير محدد", cls: "manual" };
 
   let delta = +d - Date.now();
   const overdue = delta < 0;
@@ -193,15 +179,23 @@ function message(id, text) {
 }
 
 function friendly(e) {
-  return ({
-    "auth/invalid-credential": "البريد أو كلمة المرور غير صحيحة.",
-    "auth/email-already-in-use": "البريد مستخدم بالفعل.",
+  const code = e?.code || "";
+
+  const errors = {
+    "auth/invalid-credential": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+    "auth/user-not-found": "الحساب غير موجود. تأكد من البريد أو أنشئ حسابًا.",
+    "auth/wrong-password": "كلمة المرور غير صحيحة.",
+    "auth/email-already-in-use": "البريد الإلكتروني مستخدم بالفعل.",
     "auth/weak-password": "كلمة المرور لازم تكون 6 أحرف على الأقل.",
-    "auth/invalid-email": "راجع البريد الإلكتروني.",
-    "auth/too-many-requests": "محاولات كتير. استنى شوية وجرب تاني.",
-    "auth/network-request-failed": "في مشكلة اتصال بالإنترنت. جرّب تاني.",
-    "permission-denied": "الصلاحيات مرفوضة. راجع قواعد Firestore."
-  })[e?.code] || e?.message || "حصل خطأ غير متوقع.";
+    "auth/invalid-email": "راجع صيغة البريد الإلكتروني.",
+    "auth/too-many-requests": "محاولات كثيرة. استنى شوية وجرب تاني.",
+    "auth/network-request-failed": "في مشكلة اتصال بالإنترنت.",
+    "auth/operation-not-allowed": "طريقة تسجيل الدخول غير مفعّلة في Firebase.",
+    "permission-denied": "الصلاحيات مرفوضة. راجع قواعد Firestore.",
+    "unavailable": "الخدمة غير متاحة مؤقتًا. حاول مرة أخرى."
+  };
+
+  return errors[code] || e?.message || "حصل خطأ غير متوقع.";
 }
 
 async function load() {
@@ -342,8 +336,10 @@ function resetForm() {
   message("formMsg", "");
 }
 
+// إضافة سجل أو تعديل سجل موجود.
 $("numberForm").addEventListener("submit", async e => {
   e.preventDefault();
+
   if (!currentUser || loading) return;
 
   const submitBtn = $("numberForm").querySelector('button[type="submit"]');
@@ -353,19 +349,15 @@ $("numberForm").addEventListener("submit", async e => {
   const kind = $("kind").value;
   const lastDate = $("lastDate").value;
   const manualStatus = $("manualStatus").value;
-
-  if (!phone || !lastDate) return;
-
   const parsed = parseDate(lastDate);
 
-  if (!parsed) {
-    message("formMsg", "راجع تاريخ ووقت آخر عملية.");
+  if (!phone || !parsed) {
+    message("formMsg", "اكتب رقم الهاتف وحدد تاريخ آخر عملية صحيحًا.");
     return;
   }
 
   const existing = id ? records.find(r => r.id === id) : null;
 
-  // عند تعديل السجل، نحافظ على يوم الميني الأصلي.
   const anchorDay = kind === "mini"
     ? (existing?.kind === "mini"
         ? getAnchorDay(existing, parsed)
@@ -422,6 +414,7 @@ $("numberForm").addEventListener("submit", async e => {
 
 $("cancelEdit").addEventListener("click", resetForm);
 
+// أزرار التعديل وتسجيل العملية والحذف.
 $("records").addEventListener("click", async e => {
   const b = e.target.closest("button[data-action]");
   if (!b || !currentUser || b.disabled) return;
@@ -447,10 +440,10 @@ $("records").addEventListener("click", async e => {
 
     const nowDate = new Date();
     const now = localInputValue(nowDate);
+    const previousDate = parseDate(r.lastDate || r.cycleStart) || nowDate;
 
-    // للميني: حافظ على يومه الأصلي حتى بعد تسجيل العملية.
     const anchorDay = r.kind === "mini"
-      ? getAnchorDay(r, parseDate(r.lastDate || r.cycleStart) || nowDate)
+      ? getAnchorDay(r, previousDate)
       : nowDate.getDate();
 
     b.disabled = true;
@@ -495,6 +488,7 @@ $("records").addEventListener("click", async e => {
   }
 });
 
+// البحث والفلاتر.
 $("search").addEventListener("input", render);
 
 document.querySelectorAll(".filter").forEach(b => {
@@ -535,6 +529,7 @@ if ($("soonStat")) {
   });
 }
 
+// تصدير نسخة CSV احتياطية.
 $("exportBtn").addEventListener("click", () => {
   const cols = [
     "id", "name", "phone", "kind", "lastDate",
@@ -564,10 +559,10 @@ $("exportBtn").addEventListener("click", () => {
   a.click();
 
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-
   message("importMsg", `تم تجهيز نسخة احتياطية تضم ${records.length} سجلًا.`);
 });
 
+// فحص السجلات المكررة دون حذف أي بيانات.
 $("auditBtn").addEventListener("click", () => {
   const groups = new Map();
 
@@ -596,52 +591,93 @@ $("importBtn").addEventListener("click", () => {
   alert("قائمة الأرقام الأصلية غير موجودة في هذا الملف. لم تتم إضافة أو حذف أي سجل.");
 });
 
-$("loginBtn").addEventListener("click", async e => {
+// التحقق من بيانات الحساب.
+function validateCredentials() {
+  const emailInput = $("email");
+  const passwordInput = $("password");
+  const email = emailInput.value.trim();
+
+  if (!email || !emailInput.checkValidity()) {
+    message("authMsg", "اكتب بريدًا إلكترونيًا صحيحًا.");
+    emailInput.focus();
+    return null;
+  }
+
+  if (!passwordInput.value || passwordInput.value.length < 6) {
+    message("authMsg", "كلمة المرور لازم تكون 6 أحرف على الأقل.");
+    passwordInput.focus();
+    return null;
+  }
+
+  return { email, password: passwordInput.value };
+}
+
+// تسجيل الدخول: معالج submit واحد فقط، دون استدعاء click مرة أخرى.
+$("authForm").addEventListener("submit", async e => {
   e.preventDefault();
+
+  if (authLoading) return;
+
+  const credentials = validateCredentials();
+  if (!credentials) return;
+
+  const button = $("loginBtn");
+  authLoading = true;
+  button.disabled = true;
   message("authMsg", "جارٍ تسجيل الدخول...");
 
   try {
     await signInWithEmailAndPassword(
       auth,
-      $("email").value.trim(),
-      $("password").value
+      credentials.email,
+      credentials.password
     );
 
     message("authMsg", "");
   } catch (e) {
     message("authMsg", friendly(e));
+  } finally {
+    authLoading = false;
+    button.disabled = false;
   }
 });
 
+// إنشاء حساب جديد.
 $("signupBtn").addEventListener("click", async () => {
+  if (authLoading) return;
+
+  const credentials = validateCredentials();
+  if (!credentials) return;
+
+  const button = $("signupBtn");
+  authLoading = true;
+  button.disabled = true;
   message("authMsg", "جارٍ إنشاء الحساب...");
 
   try {
     await createUserWithEmailAndPassword(
       auth,
-      $("email").value.trim(),
-      $("password").value
+      credentials.email,
+      credentials.password
     );
 
-    message("authMsg", "تم إنشاء الحساب.");
+    message("authMsg", "تم إنشاء الحساب بنجاح.");
   } catch (e) {
     message("authMsg", friendly(e));
+  } finally {
+    authLoading = false;
+    button.disabled = false;
   }
 });
 
+// استعادة كلمة المرور.
 if ($("forgotPasswordBtn")) {
   $("forgotPasswordBtn").addEventListener("click", async () => {
     const emailInput = $("email");
     const email = emailInput.value.trim();
 
-    if (!email) {
-      message("authMsg", "اكتب بريدك الإلكتروني الأول.");
-      emailInput.focus();
-      return;
-    }
-
-    if (!emailInput.checkValidity()) {
-      message("authMsg", "صيغة البريد الإلكتروني غير صحيحة.");
+    if (!email || !emailInput.checkValidity()) {
+      message("authMsg", "اكتب بريدك الإلكتروني الصحيح أولًا.");
       emailInput.focus();
       return;
     }
@@ -658,24 +694,14 @@ if ($("forgotPasswordBtn")) {
         "لو البريد مسجل، هتوصلك رسالة استعادة كلمة المرور. راجع الوارد والرسائل غير المرغوب فيها."
       );
     } catch (e) {
-      if (e.code === "auth/invalid-email") {
-        message("authMsg", "صيغة البريد الإلكتروني غير صحيحة.");
-      } else if (e.code === "auth/too-many-requests") {
-        message("authMsg", "محاولات كتير. استنى شوية وجرب تاني.");
-      } else {
-        message("authMsg", "تعذر إرسال الرسالة. تأكد من إعدادات Firebase Authentication.");
-      }
+      message("authMsg", friendly(e));
     } finally {
       button.disabled = false;
     }
   });
-});
+}
 
-$("authForm").addEventListener("submit", e => {
-  e.preventDefault();
-  $("loginBtn").click();
-});
-
+// تسجيل الخروج.
 $("logoutBtn").addEventListener("click", async () => {
   try {
     await signOut(auth);
@@ -684,6 +710,7 @@ $("logoutBtn").addEventListener("click", async () => {
   }
 });
 
+// متابعة حالة تسجيل الدخول.
 onAuthStateChanged(auth, async user => {
   currentUser = user;
 
@@ -713,4 +740,3 @@ onAuthStateChanged(auth, async user => {
     $("records").innerHTML = "";
   }
 });
-
