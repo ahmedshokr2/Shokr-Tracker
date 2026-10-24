@@ -1,4 +1,3 @@
-
 import { auth, db } from "./firebase.js";
 
 import {
@@ -36,24 +35,59 @@ function localInputValue(d = new Date()) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// قراءة التاريخ المحلي بدقة، خصوصًا datetime-local.
 function parseDate(s) {
   if (!s) return null;
 
-  const d = new Date(s.length === 10 ? `${s}T12:00` : s);
+  const value = String(s).trim();
 
-  return Number.isNaN(+d) ? null : d;
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?$/
+  );
+
+  if (!match) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const hour = Number(match[4] || 12);
+  const minute = Number(match[5] || 0);
+  const second = Number(match[6] || 0);
+  const ms = Number((match[7] || "0").padEnd(3, "0"));
+
+  const d = new Date(year, month, day, hour, minute, second, ms);
+
+  if (
+    d.getFullYear() !== year ||
+    d.getMonth() !== month ||
+    d.getDate() !== day ||
+    d.getHours() !== hour ||
+    d.getMinutes() !== minute
+  ) {
+    return null;
+  }
+
+  return d;
 }
 
-// إضافة شهر مع الحفاظ على الساعة والدقيقة واليوم الأصلي قدر الإمكان.
+// إضافة شهر مع تثبيت يوم الشهر الأصلي قدر الإمكان.
 function addMonths(d, n, anchor) {
   const idx = d.getMonth() + n;
   const y = d.getFullYear() + Math.floor(idx / 12);
   const m = ((idx % 12) + 12) % 12;
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  const targetDay = Math.min(
+    Number(anchor) || d.getDate(),
+    lastDay
+  );
 
   return new Date(
     y,
     m,
-    Math.min(anchor || d.getDate(), new Date(y, m + 1, 0).getDate()),
+    targetDay,
     d.getHours(),
     d.getMinutes(),
     d.getSeconds(),
@@ -61,10 +95,19 @@ function addMonths(d, n, anchor) {
   );
 }
 
+function getAnchorDay(r, d) {
+  const saved = Number(r.anchorDay);
+
+  if (saved >= 1 && saved <= 31) {
+    return saved;
+  }
+
+  return d.getDate();
+}
+
 function dueDate(r) {
   if (r.manualStatus) return null;
 
-  // التعديل: نعتمد على آخر عملية مسجلة أولًا.
   const d = parseDate(r.lastDate || r.cycleStart);
 
   if (!d) return null;
@@ -74,8 +117,9 @@ function dueDate(r) {
     return d;
   }
 
-  // الميني باك: نفس يوم الشهر التالي ونفس الساعة والدقيقة.
-  return addMonths(d, 1, r.anchorDay || d.getDate());
+  // الميني باك يرجع لنفس يوم الشهر الأصلي،
+  // حتى لو الشهر السابق كان أقصر.
+  return addMonths(d, 1, getAnchorDay(r, d));
 }
 
 function esc(s) {
@@ -215,9 +259,7 @@ function render() {
     const matchesFilter = filter === "all" || items.some(r => {
       const d = dueDate(r);
 
-      if (filter === "due") {
-        return d && +d <= now;
-      }
+      if (filter === "due") return d && +d <= now;
 
       if (filter === "soon") {
         if (!d) return false;
@@ -321,6 +363,15 @@ $("numberForm").addEventListener("submit", async e => {
     return;
   }
 
+  const existing = id ? records.find(r => r.id === id) : null;
+
+  // عند تعديل السجل، نحافظ على يوم الميني الأصلي.
+  const anchorDay = kind === "mini"
+    ? (existing?.kind === "mini"
+        ? getAnchorDay(existing, parsed)
+        : parsed.getDate())
+    : parsed.getDate();
+
   const data = {
     phone,
     name,
@@ -328,7 +379,7 @@ $("numberForm").addEventListener("submit", async e => {
     lastDate,
     cycleStart: lastDate,
     manualStatus: manualStatus || "",
-    anchorDay: parsed.getDate(),
+    anchorDay,
     updatedAt: serverTimestamp()
   };
 
@@ -373,7 +424,7 @@ $("cancelEdit").addEventListener("click", resetForm);
 
 $("records").addEventListener("click", async e => {
   const b = e.target.closest("button[data-action]");
-  if (!b || !currentUser) return;
+  if (!b || !currentUser || b.disabled) return;
 
   const r = records.find(x => x.id === b.dataset.id);
   if (!r) return;
@@ -394,7 +445,15 @@ $("records").addEventListener("click", async e => {
   if (b.dataset.action === "done") {
     if (!confirm("تأكيد تسجيل العملية الآن؟")) return;
 
-    const now = localInputValue();
+    const nowDate = new Date();
+    const now = localInputValue(nowDate);
+
+    // للميني: حافظ على يومه الأصلي حتى بعد تسجيل العملية.
+    const anchorDay = r.kind === "mini"
+      ? getAnchorDay(r, parseDate(r.lastDate || r.cycleStart) || nowDate)
+      : nowDate.getDate();
+
+    b.disabled = true;
 
     try {
       await updateDoc(
@@ -402,7 +461,7 @@ $("records").addEventListener("click", async e => {
         {
           lastDate: now,
           cycleStart: now,
-          anchorDay: new Date(now).getDate(),
+          anchorDay,
           manualStatus: "",
           updatedAt: serverTimestamp()
         }
@@ -411,6 +470,8 @@ $("records").addEventListener("click", async e => {
       await load();
     } catch (e) {
       alert(friendly(e));
+    } finally {
+      b.disabled = false;
     }
   }
 
@@ -419,6 +480,8 @@ $("records").addEventListener("click", async e => {
       `حذف متابعة ${r.kind === "discount" ? "الخصم" : "الميني باك"} للرقم ${r.phone} نهائيًا؟`
     )) return;
 
+    b.disabled = true;
+
     try {
       await deleteDoc(
         doc(db, "users", currentUser.uid, "numbers", r.id)
@@ -426,6 +489,8 @@ $("records").addEventListener("click", async e => {
       await load();
     } catch (e) {
       alert(friendly(e));
+    } finally {
+      b.disabled = false;
     }
   }
 });
@@ -459,7 +524,6 @@ function showSoonRecords() {
   });
 }
 
-// دعم اختياري لو العنصر موجود في HTML.
 if ($("soonStat")) {
   $("soonStat").addEventListener("click", showSoonRecords);
 
@@ -565,7 +629,6 @@ $("signupBtn").addEventListener("click", async () => {
   }
 });
 
-// دعم اختياري لو زر استعادة كلمة المرور موجود في HTML.
 if ($("forgotPasswordBtn")) {
   $("forgotPasswordBtn").addEventListener("click", async () => {
     const emailInput = $("email");
@@ -606,7 +669,7 @@ if ($("forgotPasswordBtn")) {
       button.disabled = false;
     }
   });
-}
+});
 
 $("authForm").addEventListener("submit", e => {
   e.preventDefault();
@@ -650,3 +713,4 @@ onAuthStateChanged(auth, async user => {
     $("records").innerHTML = "";
   }
 });
+
