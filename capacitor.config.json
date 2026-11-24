@@ -1,0 +1,6 @@
+{
+  "appId": "com.ahmedshokr.tracker",
+  "appName": "Shokr Tracker",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
