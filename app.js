@@ -356,13 +356,8 @@ $("numberForm").addEventListener("submit", async e => {
     return;
   }
 
-  const existing = id ? records.find(r => r.id === id) : null;
-
-  const anchorDay = kind === "mini"
-    ? (existing?.kind === "mini"
-        ? getAnchorDay(existing, parsed)
-        : parsed.getDate())
-    : parsed.getDate();
+  // نعتمد يوم التاريخ الذي أدخله المستخدم.
+  const anchorDay = parsed.getDate();
 
   const data = {
     phone,
@@ -438,13 +433,12 @@ $("records").addEventListener("click", async e => {
   if (b.dataset.action === "done") {
     if (!confirm("تأكيد تسجيل العملية الآن؟")) return;
 
+    // تسجيل تاريخ ووقت التنفيذ الفعلي.
     const nowDate = new Date();
     const now = localInputValue(nowDate);
-    const previousDate = parseDate(r.lastDate || r.cycleStart) || nowDate;
 
-    const anchorDay = r.kind === "mini"
-      ? getAnchorDay(r, previousDate)
-      : nowDate.getDate();
+    // بدء دورة الميني الجديدة من يوم التنفيذ الفعلي.
+    const anchorDay = nowDate.getDate();
 
     b.disabled = true;
 
@@ -612,7 +606,7 @@ function validateCredentials() {
   return { email, password: passwordInput.value };
 }
 
-// تسجيل الدخول: معالج submit واحد فقط، دون استدعاء click مرة أخرى.
+// تسجيل الدخول.
 $("authForm").addEventListener("submit", async e => {
   e.preventDefault();
 
